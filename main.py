@@ -1,9 +1,9 @@
 from NSSinterlayer import NSSinterlayer
 
-nss = NSSinterlayer()
-print(nss.init("./key"))
-print(nss.close())
+LIB_PATH_NSS = "/usr/lib/x86_64-linux-gnu/libnss3.so"
+LIB_PATH_SMIME3 = "/usr/lib/x86_64-linux-gnu/libsmime3.so"
 
-data = nss.encrypt("test_text")
-print(data)
-print(nss.dectypt(data))
+with NSSinterlayer(LIB_PATH_NSS, LIB_PATH_SMIME3, "./key") as nss:
+    data = nss.encrypt("test_text")
+    print(data)
+    print(nss.decrypt(data))
