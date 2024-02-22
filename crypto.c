@@ -18,6 +18,29 @@ typedef char* (*func7)(SECItem *keyid, SECItem *data, int type,
                        SECItem *input); // NSSBase64_EncodeItem
 typedef SECStatus (*func8)(); // NSS_Shutdown
 
+
+void removeChars(char *str, char **result, char c) {
+    int len = strlen(str);
+    *result = (char*)malloc(len + 1); // Выделение памяти для новой строки
+
+    if (*result == NULL) {
+        fprintf(stderr, "Ошибка выделения памяти\n");
+        exit(1);
+    }
+
+    int j = 0; // Индекс для новой строки
+
+    for (int i = 0; i < len; i++) {
+        if (str[i] != c) {
+            (*result)[j] = str[i];
+            j++;
+        }
+    }
+
+    (*result)[j] = '\0'; // Добавляем завершающий нулевой символ
+}
+
+
 int CRPAPI_init(HINSTANCE hDll, char *profile){
     SECStatus rv;
 
@@ -43,7 +66,7 @@ int CRPAPI_init(HINSTANCE hDll, char *profile){
     PK11_InitPin = (func5)GetProcAddress(hDll, "PK11_InitPin");
     if (PK11_InitPin == NULL) return 6;
 
-    char *profile_path;
+    char *profile_path[256];
     sprintf(profile_path, "sql:%s", profile);
     rv = NSS_InitReadWrite(profile_path);
     if (rv != SECSuccess) {
@@ -66,8 +89,10 @@ int CRPAPI_init(HINSTANCE hDll, char *profile){
 int CRPAPI_encrypt(HINSTANCE hDll, char *str, char **ret){
     SECStatus rv;
 
+
     func6 PK11SDR_Encrypt;
     func7 NSSBase64_EncodeItem;
+    char *tempstr;
 
     PK11SDR_Encrypt = (func6)GetProcAddress(hDll, "PK11SDR_Encrypt");
     if (PK11SDR_Encrypt == NULL) return 7;
@@ -90,8 +115,11 @@ int CRPAPI_encrypt(HINSTANCE hDll, char *str, char **ret){
         return 22;
     }
 
-    *ret = NSSBase64_EncodeItem(NULL, NULL, 0, &result);
-    memmove(&(*ret)[64], &(*ret)[66], 6);
+    tempstr = NSSBase64_EncodeItem(NULL, NULL, 0, &result);
+
+    removeChars(tempstr, ret, '\n');
+    removeChars(*ret, ret, '\r');
+
     return 0;
 }
 
