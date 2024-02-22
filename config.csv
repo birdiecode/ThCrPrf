@@ -1,0 +1,6 @@
+smtpserver;mail.example.ru;587;test@example.ru;password;
+server;mail.example.ru;test account;test@example.ru;password;imap
+identity;name;1;test@example.ru;;
+account;1;1;;;
+pref;mail.accountmanager.accounts;"account1";;;
+pref;datareporting.policy.firstRunURL;"https://google.com";;;

@@ -1,75 +1,105 @@
+//
+// Created by birdiecode on 17.02.2024.
+//
+
 #include <stdio.h>
 #include <unistd.h>
+#include <stdlib.h>
 #include <windows.h>
+#include "crypto.h"
 
-typedef enum {
-    SECWouldBlock = -2,
-    SECFailure = -1,
-    SECSuccess = 0
-} SECStatus;
+char* readline(FILE *file) {
+    char *line = NULL;
+    int position = 0;
+    int bufferSize = 128;
+    line = (char*)malloc(bufferSize * sizeof(char));
 
-typedef void* PK11SlotInfo;          /* defined in secmodti.h */
+    if (!line) {
+        fprintf(stderr, "Ошибка выделения памяти\n");
+        return NULL;
+    }
 
-typedef enum {
-    PR_FALSE = 0,
-    PR_TRUE = 1
-} PRBool;
+    int c;
 
-typedef enum {
-    siBuffer = 0,
-    siClearDataBuffer = 1,
-    siCipherDataBuffer = 2,
-    siDERCertBuffer = 3,
-    siEncodedCertBuffer = 4,
-    siDERNameBuffer = 5,
-    siEncodedNameBuffer = 6,
-    siAsciiNameString = 7,
-    siAsciiString = 8,
-    siDEROID = 9,
-    siUnsignedInteger = 10,
-    siUTCTime = 11,
-    siGeneralizedTime = 12,
-    siVisibleString = 13,
-    siUTF8String = 14,
-    siBMPString = 15
-} SECItemType;
+    while (1) {
+        c = fgetc(file);
 
-typedef struct SECItemStr SECItem;
+        if (c == -1 || c == '\n') {
+            line[position] = '\0';
+            if (position == 0) return NULL;
+            break;
+        }
 
-struct SECItemStr {
-    SECItemType type;
-    unsigned char *data;
-    unsigned int len;
-};
 
-typedef struct {
-    enum {
-        PW_NONE = 0,
-        PW_FROMFILE = 1,
-        PW_PLAINTEXT = 2,
-        PW_EXTERNAL = 3
-    } source;
-    char *data;
-} secuPWData;
 
-typedef SECStatus (*func1)(char *profile); // NSS_InitReadWrite
-typedef PK11SlotInfo (*func2)(); // PK11_GetInternalKeySlot
-typedef void (*func3)(PK11SlotInfo *slot); // PK11_FreeSlot
-typedef PRBool (*func4)(PK11SlotInfo *slot); // PK11_NeedUserInit
-typedef SECStatus (*func5)(PK11SlotInfo *slot, const char *ssopw,
-        const char *pk11_userpwd); // PK11_InitPin
-typedef SECStatus (*func6)(SECItem *keyid, SECItem *data,
-        SECItem *result, void *cx); // PK11SDR_Encrypt
-typedef char* (*func7)(SECItem *keyid, SECItem *data, int type,
-        SECItem *input); // NSSBase64_EncodeItem
-typedef SECStatus (*func8)(); // NSS_Shutdown
+        line[position] = c;
+        position++;
+
+        if (position >= bufferSize) {
+            bufferSize += 128;
+            char *temp = realloc(line, bufferSize * sizeof(char));
+            if (!temp) {
+                fprintf(stderr, "Ошибка перевыделения памяти\n");
+                free(line);
+                return NULL;
+            }
+            line = temp;
+        }
+    }
+
+    return line;
+}
+
+
+void add_smtpserver(FILE *file, int num, char *host, char *port, char *username){
+    fprintf(file, "user_pref(\"mail.smtpserver.smtp%d.authMethod\", 4);\n", num);
+    fprintf(file, "user_pref(\"mail.smtpserver.smtp%d.hostname\", \"%s\");\n", num, host);
+    fprintf(file, "user_pref(\"mail.smtpserver.smtp%d.port\", \"%s\");\n", num, port);
+    fprintf(file, "user_pref(\"mail.smtpserver.smtp%d.try_ssl\", 2);\n", num);
+    fprintf(file, "user_pref(\"mail.smtpserver.smtp%d.username\", \"%s\");\n", num, username);
+}
+
+void add_server(FILE *file, int num, char *host, char *acname, char *servtype, char *username){
+    fprintf(file, "user_pref(\"mail.server.server%d.authMethod\", 4);\n", num);
+    fprintf(file, "user_pref(\"mail.server.server%d.hostname\", \"%s\");\n", num, host);
+    fprintf(file, "user_pref(\"mail.server.server%d.name\", \"%s\");\n", num, acname);
+    fprintf(file, "user_pref(\"mail.server.server%d.type\", \"%s\");\n", num, servtype);
+    fprintf(file, "user_pref(\"mail.server.server%d.userName\", \"%s\");\n", num, username);
+}
+
+void add_identity(FILE *file, int num, char *fullname, int smtp_num, char *useremail){
+    fprintf(file, "user_pref(\"mail.identity.identity%d.fullName\", \"%s\");\n", num, fullname);
+    fprintf(file, "user_pref(\"mail.identity.identity%d.smtpServer\", \"smtp%d\");\n", num, smtp_num);
+    fprintf(file, "user_pref(\"mail.identity.identity%d.useremail\", \"%s\");\n", num, useremail);
+    fprintf(file, "user_pref(\"mail.identity.identity%d.valid\", true);\n", num);
+}
+
+void add_account(FILE *file, int num, int server_num, int identity_num){
+    fprintf(file, "user_pref(\"mail.account.account%d.identities\", \"identity%d\");\n", num, identity_num);
+    fprintf(file, "user_pref(\"mail.account.account%d.server\", \"server%d\");\n", num, server_num);
+}
+
 
 int main(int argc, char *argv[]) {
+
     int c;
-    char *dllpath;
+    char *dll_path;
+    char *profile_path;
+    char *config_path;
+    char *path_prefjs[256];
+    char delimiter[] = ";";
+    char *token;
+    char *line = NULL;
+    char *config_arg[6];
+    int config_col_itr = 0;
+    int smtpserver_it = 1;
+    int server_it = 1;
+    int identity_it = 1;
+    int account_it = 1;
 
 
-    while ((c = getopt(argc, argv, "ho:l:")) != -1) {
+    // region option parser
+    while ((c = getopt(argc, argv, "hl:p:c:")) != -1) {
         switch (c) {
             case 'h':
                 printf("Usage: %s -h -l <path_library_nss> -p <profile_path>\n", argv[0]);
@@ -77,11 +107,18 @@ int main(int argc, char *argv[]) {
 
             case 'p':
                 printf("Profile: %s\n", optarg);
+                profile_path = strdup(optarg);
+                sprintf(path_prefjs, "%s\\prefs.js", profile_path);
                 break;
 
             case 'l':
                 printf("Lib file: %s\n", optarg);
-                dllpath = strdup(optarg);
+                dll_path = strdup(optarg);
+                break;
+
+            case 'c':
+                printf("Config file: %s\n", optarg);
+                config_path = strdup(optarg);
                 break;
 
             case '?':
@@ -96,102 +133,77 @@ int main(int argc, char *argv[]) {
                 return 1;
         }
     }
+    // endregion
 
 
+    FILE *config_file = fopen(config_path, "r");
+    FILE *pref_file = fopen(path_prefjs, "w");
+    HINSTANCE hDll = LoadLibrary(dll_path);
 
-    SECStatus rv;
-    HINSTANCE hDll = LoadLibrary(dllpath);
-
-    func1 NSS_InitReadWrite;
-    func2 PK11_GetInternalKeySlot;
-    func3 PK11_FreeSlot;
-    func4 PK11_NeedUserInit;
-    func5 PK11_InitPin;
-    func6 PK11SDR_Encrypt;
-    func7 NSSBase64_EncodeItem;
-    func8 NSS_Shutdown;
-
-
-    if (hDll != NULL) {
-        printf("Load library ok\n");
-
-        NSS_InitReadWrite = (func1)GetProcAddress(hDll, "NSS_InitReadWrite");
-        if (NSS_InitReadWrite == NULL) return 2;
-
-        PK11_GetInternalKeySlot = (func2)GetProcAddress(hDll, "PK11_GetInternalKeySlot");
-        if (PK11_GetInternalKeySlot == NULL) return 3;
-
-        PK11_FreeSlot = (func3)GetProcAddress(hDll, "PK11_FreeSlot");
-        if (PK11_FreeSlot == NULL) return 4;
-
-        PK11_NeedUserInit = (func4)GetProcAddress(hDll, "PK11_NeedUserInit");
-        if (PK11_NeedUserInit == NULL) return 5;
-
-        PK11_InitPin = (func5)GetProcAddress(hDll, "PK11_InitPin");
-        if (PK11_InitPin == NULL) return 6;
-
-        PK11SDR_Encrypt = (func6)GetProcAddress(hDll, "PK11SDR_Encrypt");
-        if (PK11SDR_Encrypt == NULL) return 7;
-
-        NSSBase64_EncodeItem = (func7)GetProcAddress(hDll, "NSSBase64_EncodeItem");
-        if (NSSBase64_EncodeItem == NULL)
-            NSSBase64_EncodeItem = (func7)GetProcAddress(hDll, "NSSBase64_EncodeItem_Util");
-        if (NSSBase64_EncodeItem == NULL) return 8;
-
-        NSS_Shutdown = (func8)GetProcAddress(hDll, "NSS_Shutdown");
-        if (NSS_Shutdown == NULL) return 9;
-
+    if (config_file == NULL) {
+        fprintf(stderr, "Open config file error\n");
+        return 1;
     }
-    else {
+    if (pref_file == NULL) {
+        fprintf(stderr, "Open pref file error\n");
+        return 1;
+    }
+    if (hDll == NULL) {
         DWORD error = GetLastError();
         printf("Error load library code: %u\n", error);
         return 1;
     }
 
-    rv = NSS_InitReadWrite("sql:C:\\w\\test");
-    if (rv != SECSuccess) {
-        return 20;
-    }
-    PK11SlotInfo *slot = NULL;
-    slot = PK11_GetInternalKeySlot();
 
-    if (slot && PK11_NeedUserInit(slot)) {
-        printf("PK11_NeedUserInit and KeySlot ok\n");
-        rv = PK11_InitPin(slot, NULL, "");
-        if (rv != SECSuccess) {
-            return 21;
+    CRPAPI_init(hDll, profile_path);
+
+
+    while ((line = readline(config_file)) != NULL) {
+        // присваеваем NULL массиву строк
+        for (int i = 0; i < 6; i++) {
+            config_arg[i] = NULL;
         }
-        printf("Set empty password\n");
+
+
+        token = strtok(line, delimiter);
+
+
+        while (token != NULL) {
+            config_arg[config_col_itr] = strdup(token);
+            token = strtok(NULL, delimiter);
+            config_col_itr++;
+        }
+
+        if (strcmp(config_arg[0], "smtpserver") == 0){
+            add_smtpserver(pref_file, smtpserver_it, config_arg[1], config_arg[2], config_arg[3]);
+            smtpserver_it++;
+        } else if (strcmp(config_arg[0], "server") == 0){
+            add_server(pref_file, server_it, config_arg[1], config_arg[2], config_arg[5], config_arg[3]);
+            server_it++;
+        } else if (strcmp(config_arg[0], "identity") == 0){
+            add_identity(pref_file, identity_it, config_arg[1], atoi(config_arg[2]), config_arg[3]);
+            identity_it++;
+        } else if (strcmp(config_arg[0], "account") == 0){
+            add_account(pref_file, account_it, atoi(config_arg[1]), atoi(config_arg[2]));
+            account_it++;
+        } else if (strcmp(config_arg[0], "pref") == 0){
+            fprintf(pref_file, "user_pref(\"%s\", %s);\n",  config_arg[1], config_arg[2]);
+        } else {
+            fprintf(stderr, "Error no method: %s", config_arg[0]);
+        }
+
+
+        for (int i = 0; i < 6; i++) {
+            free(config_arg[i]);
+        }
+        config_col_itr = 0;
+        free(line);
     }
-    if (slot) {
-        PK11_FreeSlot(slot);
-    }
 
-    char *teststr = "hui";
+    fclose(config_file);
 
-    SECItem keyid = { 0, 0, 0 };
-    SECItem data;
-    data.data = (unsigned char *)teststr;
-    data.len = strlen(teststr);
+    CRPAPI_shutdown(hDll);
 
-    SECItem result = { 0, 0, 0 };
-    secuPWData pwdata = { PW_NONE, 0 };
-
-
-    rv = PK11SDR_Encrypt(&keyid, &data, &result, &pwdata);
-    if (rv != SECSuccess) {
-        return 22;
-    }
-    printf("Encrypt text ok\n");
-
-    //dd = self._NSSBase64_EncodeItem_Util(None, None, 0, out)
-    char *newResult = NSSBase64_EncodeItem(NULL, NULL, 0, &result);
-    memmove(&newResult[64], &newResult[66], 6);
-    printf("%s\n", newResult);
-
-    if (NSS_Shutdown() != SECSuccess) {
-        return 23;
-    }
     FreeLibrary(hDll);
     return 0;
 }
