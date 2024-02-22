@@ -1,4 +1,5 @@
 #include <stdio.h>
+#include <unistd.h>
 #include <windows.h>
 
 typedef enum {
@@ -61,10 +62,45 @@ typedef SECStatus (*func6)(SECItem *keyid, SECItem *data,
         SECItem *result, void *cx); // PK11SDR_Encrypt
 typedef char* (*func7)(SECItem *keyid, SECItem *data, int type,
         SECItem *input); // NSSBase64_EncodeItem
+typedef SECStatus (*func8)(); // NSS_Shutdown
 
-int main() {
+int main(int argc, char *argv[]) {
+    int c;
+    char *dllpath;
+
+
+    while ((c = getopt(argc, argv, "ho:l:")) != -1) {
+        switch (c) {
+            case 'h':
+                printf("Usage: %s -h -l <path_library_nss> -p <profile_path>\n", argv[0]);
+                return 0;
+
+            case 'p':
+                printf("Profile: %s\n", optarg);
+                break;
+
+            case 'l':
+                printf("Lib file: %s\n", optarg);
+                dllpath = strdup(optarg);
+                break;
+
+            case '?':
+                if (optopt == 'o') {
+                    fprintf(stderr, "Option -%c requires an argument.\n", optopt);
+                } else {
+                    fprintf(stderr, "Unknown option -%c'.\n", optopt);
+                }
+                return 1;
+
+            default:
+                return 1;
+        }
+    }
+
+
+
     SECStatus rv;
-    HINSTANCE hDll = LoadLibrary("nss3.dll");
+    HINSTANCE hDll = LoadLibrary(dllpath);
 
     func1 NSS_InitReadWrite;
     func2 PK11_GetInternalKeySlot;
@@ -73,6 +109,7 @@ int main() {
     func5 PK11_InitPin;
     func6 PK11SDR_Encrypt;
     func7 NSSBase64_EncodeItem;
+    func8 NSS_Shutdown;
 
 
     if (hDll != NULL) {
@@ -101,7 +138,11 @@ int main() {
             NSSBase64_EncodeItem = (func7)GetProcAddress(hDll, "NSSBase64_EncodeItem_Util");
         if (NSSBase64_EncodeItem == NULL) return 8;
 
-    } else {
+        NSS_Shutdown = (func8)GetProcAddress(hDll, "NSS_Shutdown");
+        if (NSS_Shutdown == NULL) return 9;
+
+    }
+    else {
         DWORD error = GetLastError();
         printf("Error load library code: %u\n", error);
         return 1;
@@ -145,10 +186,12 @@ int main() {
 
     //dd = self._NSSBase64_EncodeItem_Util(None, None, 0, out)
     char *newResult = NSSBase64_EncodeItem(NULL, NULL, 0, &result);
+    memmove(&newResult[64], &newResult[66], 6);
     printf("%s\n", newResult);
 
-    //char *profile_path = "sql:C:\\Users\\admin\\Desktop\\profileth";
+    if (NSS_Shutdown() != SECSuccess) {
+        return 23;
+    }
     FreeLibrary(hDll);
     return 0;
 }
-
